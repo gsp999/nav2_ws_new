@@ -49,11 +49,18 @@ class ThirdAreaSingle(Node):
         self.pose_sub = self.create_subscription(
             PoseStamped, "/single_nav_goal", self.pose_goal_cb, 10)
 
-        self.nav_busy = False
+        self.nav_ready = False
 
-        self.get_logger().info("ThirdAreaSingle: waiting for Nav2...")
-        self.nav_client.wait_for_server()
-        self.get_logger().info("ThirdAreaSingle: ready, listening on /nav_goal  [x, y, yaw]")
+        # 用 timer 非阻塞等待 Nav2，不堵 spin
+        self._wait_timer = self.create_timer(1.0, self._check_nav_ready)
+        self.get_logger().info("ThirdAreaSingle: waiting for Nav2 (non-blocking)...")
+
+    def _check_nav_ready(self):
+        if self.nav_client.wait_for_server(timeout_sec=0.1):
+            if not self.nav_ready:
+                self.nav_ready = True
+                self.get_logger().info("ThirdAreaSingle: Nav2 ready, listening on /nav_goal  [x, y, yaw]")
+                self._wait_timer.cancel()
 
     # ---- /nav_goal: [x, y, yaw] ----
     def nav_goal_cb(self, msg: Float32MultiArray):
@@ -79,6 +86,9 @@ class ThirdAreaSingle(Node):
         self._start_nav(msg.pose.position.x, msg.pose.position.y, yaw)
 
     def _start_nav(self, x, y, yaw):
+        if not self.nav_ready:
+            self.get_logger().warn("Nav2 not ready yet — ignoring goal")
+            return
         if self.nav_busy:
             self.get_logger().warn("Still navigating — ignoring new goal")
             return
