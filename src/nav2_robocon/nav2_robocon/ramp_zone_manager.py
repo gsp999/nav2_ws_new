@@ -114,8 +114,8 @@ class RampZoneManager(Node):
         out.linear.y = msg.linear.y
         out.angular.z = msg.angular.z
 
-        # Yaw 覆盖
-        if self.desired_yaw is not None:
+        # Yaw 覆盖：只在 ramp 区域内锁 yaw，正常路段交给 Nav2
+        if self.desired_yaw is not None and self.in_ramp:
             yaw_error = normalize_angle(self.desired_yaw - self.current_yaw)
             wz = self.yaw_kp * yaw_error
             wz = max(-self.yaw_max_vel, min(self.yaw_max_vel, wz))
