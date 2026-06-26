@@ -175,3 +175,20 @@ Node(
 ### 未改动的文件
 
 `cmd_vel_bridge.py`、`odom_to_tf_node.py`、`goal_relay_node.py`、`nav2_bringup.launch.py`、`setup.py`、`package.xml`、`maps/*`、`resource/*`、`setup.cfg`
+
+### 运动逻辑变化
+
+| | 原始 | 现在 |
+|---|---|---|
+| **desired_yaw 设置时机** | 到达第一个 waypoint **之后**（`result_cb` → `do_action("activate_yaw")`） | 收到目标**立即**设置（进入待命状态） |
+| **yaw 覆盖范围** | `if desired_yaw is not None`，一旦设置**全局锁死**，直到最后 `done` 才放 | 加 `and self.in_ramp` 条件，**仅 ramp 内锁 yaw**，正常路段 Nav2 自由控制 |
+| **到达后动作** | `do_action` 执行机械臂/悬挂/yaw 命令（`activate_yaw` / `height_400` / `armpose_4` / `done`） | 只发 999 释放 yaw 待命，无其他动作 |
+| **运动管线** | `/cmd_vel` → ramp_zone_manager → `/cmd_vel_adjusted` → cmd_vel_bridge → 底盘 | **完全不变** |
+| **Nav2 MPPI 参数** | 未改 | 未改 |
+| **ramp 悬挂/限速** | 进入升悬挂+最低限速，离开降悬挂 | **完全不变** |
+
+**为什么 yaw 逻辑要这样改**
+
+原始流程是 4 步序列，第一步到 (6.0, ±2.5) 之后才触发 `activate_yaw`，后续步骤走 ramp 时 yaw 已被锁。但如果只发一个穿过 ramp 的单目标，原始的 `activate_yaw` 永远不会被触发——因为没有人先导航到第一个中间点——ramp 里 yaw 就不会锁。
+
+现在的做法：收到目标就设好 target yaw（待命），ramp_zone_manager 检测到机器人进入 ramp 时自动接管 yaw，出了 ramp 还给 Nav2。这样**单目标穿 ramp 也能正确锁 yaw，正常路段不无谓锁死**。
